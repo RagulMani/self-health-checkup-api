@@ -128,23 +128,6 @@ function sha256(content) {
   return crypto.createHash("sha256").update(content, "utf8").digest("hex");
 }
 
-function resolveMigrateSchema(databaseUrl) {
-  const fromEnv = process.env.DATABASE_SCHEMA?.trim();
-  if (fromEnv && /^[A-Za-z_][A-Za-z0-9_-]{0,62}$/.test(fromEnv)) {
-    return fromEnv;
-  }
-  try {
-    const u = new URL(databaseUrl);
-    const options = u.searchParams.get("options") || "";
-    const m = options.match(
-      /search_path\s*=\s*"?([A-Za-z_][A-Za-z0-9_-]{0,62})"?/i,
-    );
-    return m?.[1] || null;
-  } catch {
-    return null;
-  }
-}
-
 async function main() {
   const { statusOnly, start, end } = parseArgs(process.argv.slice(2));
   const databaseUrl = process.env.DATABASE_URL?.trim();
@@ -161,27 +144,12 @@ async function main() {
     process.exit(1);
   }
 
-  const migrateSchema = resolveMigrateSchema(databaseUrl);
-  const pool = new Pool({
-    connectionString: databaseUrl,
-    ...(migrateSchema
-      ? { options: `-c search_path=${migrateSchema}` }
-      : {}),
-  });
-  if (migrateSchema) {
-    console.log(`Using schema search_path=${migrateSchema}`);
-  }
+  const pool = new Pool({ connectionString: databaseUrl });
   const files = listMigrationFiles();
   if (files.length === 0) {
     console.log("No SQL files under lib/migrations/");
     await pool.end();
     return;
-  }
-
-  if (migrateSchema && migrateSchema !== "public") {
-    await pool.query(
-      `CREATE SCHEMA IF NOT EXISTS "${migrateSchema.replace(/"/g, '""')}"`,
-    );
   }
 
   await pool.query(`
